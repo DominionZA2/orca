@@ -4,6 +4,14 @@ import { describe, expect, it } from 'vitest'
 
 describe('os-opened markdown wiring', () => {
   const rawSource = readFileSync(join(process.cwd(), 'src/main/index.ts'), 'utf8')
+  const bootstrapSource = readFileSync(
+    join(process.cwd(), 'src/main/startup/main-process-ipc-bootstrap.ts'),
+    'utf8'
+  )
+  const preflightSource = readFileSync(
+    join(process.cwd(), 'src/main/startup/main-process-preflight.ts'),
+    'utf8'
+  )
   // Why: these assertions pin call shapes, not quote style, and the formatter owns the quotes.
   const source = rawSource.replaceAll('"', "'")
 
@@ -31,10 +39,12 @@ describe('os-opened markdown wiring', () => {
 
   it('captures the cold-start argv and lets the renderer pull it after mount', () => {
     expect(source).toContain('osOpenedMarkdownFiles.capture(process.argv)')
-    expect(source).toContain("ipcMain.handle('ui:consumePendingMarkdownFileOpens'")
+    expect(bootstrapSource).toContain("ipcMain.handle('ui:consumePendingMarkdownFileOpens'")
   })
 
   it('keeps the single-instance callback narrow', () => {
-    expect(source).toContain('acquireSingleInstanceLock(app, requestDesktopActivation)')
+    expect(preflightSource).toContain(
+      'acquireSingleInstanceLock(app, options.requestDesktopActivation)'
+    )
   })
 })
