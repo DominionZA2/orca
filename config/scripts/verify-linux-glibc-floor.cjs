@@ -383,6 +383,12 @@ function readImportedSymbols(filePath, objdumpPath) {
  * regression gate on exactly the host where it matters.
  */
 function verifyLinuxGlibcFloor(rootDir, options = {}) {
+  if (process.env.ORCA_SKIP_GLIBC_FLOOR === '1') {
+    console.log(
+      '[verify-linux-glibc-floor] SKIPPED (ORCA_SKIP_GLIBC_FLOOR=1) — build is only usable on hosts with glibc >= this machine'
+    )
+    return
+  }
   const binaries = collectNativeBinaries(rootDir)
   const targetArch = options.targetArch
   if (binaries.length === 0) {
