@@ -1,29 +1,22 @@
-import type { BrowserWindow } from 'electron'
-import type { WorktreeBaseWatchTarget } from './worktree-base-directory-event-filter'
 import {
   collectLocalWorktreeBaseChanges,
   collectRemoteWorktreeBaseChanges,
   hasCollectedWorktreeBaseChanges
 } from './worktree-base-directory-change-collector'
-import { scheduleWorktreeBaseNotification } from './worktree-base-directory-notifications'
+import {
+  scheduleWorktreeBaseNotification,
+  type WorktreeBaseNotificationWatch
+} from './worktree-base-directory-notifications'
 import {
   invalidateActiveGitStatusRefResolution,
   invalidateGitStatusRefResolutionForPaths
 } from './worktree-git-status-ref-watch'
-import type { WorktreeHeadIdentityRefreshState } from './worktree-head-identity-refresh'
 import type { WorktreeWatcherFailureRefreshCooldown } from './worktree-watcher-failure-refresh-cooldown'
 
-export type ActiveWatch = WorktreeBaseWatchTarget & {
-  mainWindow: BrowserWindow
+export type ActiveWatch = WorktreeBaseNotificationWatch & {
   subscription: { unsubscribe: () => Promise<void> }
-  notifyTimer: ReturnType<typeof setTimeout> | null
-  pendingStructureRepoIds: Set<string>
-  pendingGitStatusRepoIds: Set<string>
-  pendingHeadIdentityRepoIds: Set<string>
-  headIdentityRefresh: WorktreeHeadIdentityRefreshState
   gitStatusRefPaths: Set<string>
   watcherFailureRefresh: WorktreeWatcherFailureRefreshCooldown
-  disposed: boolean
 }
 
 export function handleLocalWatchEvents(

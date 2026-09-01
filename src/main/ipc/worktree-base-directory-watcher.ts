@@ -3,6 +3,7 @@ import type { Store } from '../persistence'
 import { getSshFilesystemProvider } from '../providers/ssh-filesystem-dispatch'
 import {
   createWorktreeHeadIdentityRefreshState,
+  disposeWorktreeHeadIdentityRefreshState,
   refreshWorktreeHeadIdentities
 } from './worktree-head-identity-refresh'
 import {
@@ -10,6 +11,7 @@ import {
   supportsWorktreeHeadIdentityRefresh
 } from './worktree-base-directory-notifications'
 import type { WorktreeBaseWatchTarget } from './worktree-base-directory-event-filter'
+import { EMPTY_HEAD_IDENTITY_SCOPE } from './worktree-head-identity-scope'
 import {
   buildWorktreeBaseDirectoryWatchTargets,
   clearWorktreeBaseDirectoryWatchTargetWarnings
@@ -57,6 +59,7 @@ function createActiveWatch(
     pendingStructureRepoIds: new Set(),
     pendingGitStatusRepoIds: new Set(),
     pendingHeadIdentityRepoIds: new Set(),
+    pendingHeadIdentityScope: EMPTY_HEAD_IDENTITY_SCOPE,
     headIdentityRefresh: createWorktreeHeadIdentityRefreshState(),
     gitStatusRefPaths,
     watcherFailureRefresh: new WorktreeWatcherFailureRefreshCooldown(),
@@ -170,6 +173,7 @@ async function removeWatch(key: string): Promise<void> {
   activeWatches.delete(key)
   watch.disposed = true
   clearTimeout(watch.notifyTimer ?? undefined)
+  disposeWorktreeHeadIdentityRefreshState(watch.headIdentityRefresh)
   clearPendingWorktreeBaseNotifications(watch)
   await watch.subscription.unsubscribe().catch((error) => {
     console.warn(`[worktree-base-watcher] failed to unwatch ${watch.path}:`, error)
