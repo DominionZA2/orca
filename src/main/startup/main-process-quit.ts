@@ -133,10 +133,9 @@ function installWillQuitHandler(): void {
     // Why bounded: git clears `packed-refs.lock` on SIGTERM, but only if it is
     // still alive to receive it, so the quit waits briefly rather than racing it.
     const refMaintenanceShutdown = settleWithinMs(
-      Promise.all([
-        state.repoMaintenanceShutdown,
-        state.uninstallRepoMaintenanceIdleGate?.()
-      ]).then(() => {}),
+      Promise.all([state.repoMaintenanceShutdown, state.uninstallRepoMaintenanceIdleGate?.()]).then(
+        () => {}
+      ),
       REF_MAINTENANCE_QUIT_DEADLINE_MS
     ).then(() => {})
     state.uninstallRepoMaintenanceIdleGate = null
