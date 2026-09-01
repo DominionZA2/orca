@@ -6,10 +6,16 @@ import {
 import type { AddWorktreeOptions } from './git/worktree'
 import { listWorktreeGraph } from './git/worktree'
 import { discardPreparedWorktree, unlockPreparedWorktree } from './git/worktree-create-preparation'
+import { retryPendingPreparationDiscards } from './worktree-preparation-discard-retry'
 
 const STALE_PREPARATION_CLEANUP_CONCURRENCY = 4
 
 const reclaimInFlight = new Map<string, Promise<void>>()
+
+/** One repo on one Git host: the scope a stranded discard is retried under. */
+export function preparationHostKey(repoPathKey: string, wslDistro: string): string {
+  return `${repoPathKey}\0${wslDistro}`
+}
 
 function isProcessAlive(pid: number): boolean {
   try {
@@ -31,13 +37,16 @@ export async function reclaimStaleWorktreePreparations(
   repoPath: string,
   options: AddWorktreeOptions
 ): Promise<void> {
-  const reclaimKey = `${repoPathKey}\0${options.wslDistro ?? ''}`
+  const reclaimKey = preparationHostKey(repoPathKey, options.wslDistro ?? '')
   const existing = reclaimInFlight.get(reclaimKey)
   if (existing) {
     await existing.catch(() => {})
     return
   }
   const reclaim = (async () => {
+    // Not awaited: the create path awaits this reclaim, and one stranded discard costs an unlock plus
+    // a `worktree remove --force` bounded at 30s each. Reclaiming leaked scratch must not delay create.
+    void retryPendingPreparationDiscards(reclaimKey)
     const worktrees = await listWorktreeGraph(repoPath, {
       ...options,
       includeCreatePreparations: true

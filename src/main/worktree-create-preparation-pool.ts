@@ -7,16 +7,19 @@ import {
   createWorktreePreparationLockReason
 } from '../shared/worktree/create-preparation'
 import type { AddWorktreeOptions } from './git/worktree'
-import {
-  discardPreparedWorktree,
-  prepareWorktreeCreateCheckout
-} from './git/worktree-create-preparation'
+import { prepareWorktreeCreateCheckout } from './git/worktree-create-preparation'
 import { toHostFilesystemPath } from './host-tree-removal'
 import { preparationEntryKey, preparationPathKey } from './worktree-create-preparation-claim'
 import {
   _resetStalePreparationReclaimForTests,
+  preparationHostKey,
   reclaimStaleWorktreePreparations
 } from './worktree-create-preparation-reclaim'
+import {
+  discardPreparationWithRetry,
+  resetPendingPreparationDiscardsForTests,
+  trackPreparationDiscard
+} from './worktree-preparation-discard-retry'
 
 export const WORKTREE_CREATE_PREPARATION_TTL_MS = 5 * 60_000
 export const WORKTREE_CREATE_PREPARATION_LIMIT = 3
@@ -52,8 +55,20 @@ function pathOps(path: string): Pick<typeof posix, 'dirname' | 'join'> {
 }
 
 async function discardEntry(entry: PreparationEntry): Promise<void> {
+  // A failed checkout self-discards, but that self-discard is best-effort too, so it can strand the
+  // registration for the same reason the discard here can. Enrol either way.
   await entry.ready.catch(() => {})
-  await discardPreparedWorktree(entry.repoPath, entry.preparedPath, entry.options).catch(() => {})
+  await discardPreparationWithRetry({
+    hostKey: preparationHostKey(entry.repoPathKey, entry.wslDistro),
+    repoPath: entry.repoPath,
+    preparedPath: entry.preparedPath,
+    options: entry.options
+  })
+}
+
+function discardEntryInBackground(entry: PreparationEntry): void {
+  // Tracked, not bare `void`: the test reset must be able to settle it before dropping the registry.
+  trackPreparationDiscard(discardEntry(entry))
 }
 
 function expireEntry(entry: PreparationEntry): void {
@@ -61,7 +76,7 @@ function expireEntry(entry: PreparationEntry): void {
     return
   }
   preparations.delete(entry.key)
-  void discardEntry(entry)
+  discardEntryInBackground(entry)
 }
 
 /**
@@ -93,7 +108,7 @@ function enforcePreparationLimit(
     }
     preparations.delete(victim.key)
     clearTimeout(victim.expiration)
-    void discardEntry(victim)
+    discardEntryInBackground(victim)
   }
 }
 
@@ -187,4 +202,5 @@ export async function _resetPreparationPoolForTests(): Promise<void> {
       await discardEntry(entry)
     })
   )
+  await resetPendingPreparationDiscardsForTests()
 }
