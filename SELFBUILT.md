@@ -22,7 +22,13 @@ Fixed by resolving `folder:` keys via `parseWorkspaceKey` + `state.folderWorkspa
 ## What runs on this machine
 
 - **Daily driver**: `dist/linux-unpacked/orca-ide` built from the `selfbuilt`
-  branch. Launch via the **"Orca"** shortcut (`~/.local/share/applications/orca-selfbuilt.desktop`) — pinnable to the dock.
+  branch. Launch via the **"Orca"** shortcut — pinnable to the dock. The entry file is
+  `~/.local/share/applications/orca.desktop`: it MUST keep that exact name.
+  Orca's windows carry the Wayland app-id `orca`, and GNOME matches app-id to
+  desktop-file basename — any other name and the running windows get filed
+  under GNOME's screen reader (also `orca`), producing a phantom third dock
+  icon while clicks on the real pin appear dead. The user-level file shadows
+  the screen reader's menu entry (the screen reader itself is unaffected).
 - **Fallback**: the packaged deb (`orca-ide` package) is still installed at
   `/opt/Orca`, launchable as **"Orca (packaged)"**. Deliberately kept. Run only
   one at a time (they share config; a single-instance lock guards mistakes).
