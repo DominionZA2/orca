@@ -44,13 +44,29 @@ Fixed by resolving `folder:` keys via `parseWorkspaceKey` + `state.folderWorkspa
 
 ## Update machinery
 
+Fully automatic since 2026-09-02: launching Orca from the dock **and** an hourly
+timer both run the updater; when a new release tag exists it rebuilds itself in
+the background and raises a persistent notification with a **Restart Orca now**
+button. Restarting is deliberately the only manual step — an auto-restart would
+kill live agent sessions.
+
 | Piece | Where | Role |
 |---|---|---|
-| `orca-selfbuilt-check-updates` | `~/.local/bin` | Hourly check; on a new release tag raises a **persistent** notification with an **Update now** button |
-| `orca-selfbuilt-update` | `~/.local/bin` | Fetch → rebase `selfbuilt` onto newest tag → `pnpm install` → build → notify with **Restart Orca now** button. Manual: `orca-selfbuilt-update` (add `--force` to rebuild the current tag) |
+| `orca-selfbuilt-launch` | `~/.local/bin` | Desktop entry's Exec: starts the app instantly, then runs the updater in the background |
+| `orca-selfbuilt-update` | `~/.local/bin` | The one updater: fetch → rebase local commits onto newest tag → `pnpm install` → build → **Restart Orca now** notification. flock-guarded; add `--force` to rebuild the current tag |
 | `orca-selfbuilt-restart` | `~/.local/bin` | Graceful stop + relaunch of the self-built app |
 | `orca-selfbuilt-update-check.timer` | `~/.config/systemd/user` | Hourly trigger (`systemctl --user list-timers` to inspect) |
 | State + logs | `~/.local/state/orca-selfbuilt/` | `built-tag` = currently built release; `update.log`, `switchover.log` |
+
+Two hard-won rules baked into the updater:
+- `git fetch --tags --force` — upstream re-points release tags occasionally
+  (v1.4.195 was); without `--force` the fetch exits non-zero on the moved tag
+  and everything downstream dies silently.
+- Rebase is `git rebase --onto <new-tag> $(git describe --tags --abbrev=0 selfbuilt) selfbuilt`
+  — release tags don't share linear history, so a plain `git rebase <new-tag>`
+  replays the old release branch's own commits and conflicts everywhere; and
+  the base comes from `git describe`, not the state file, so a hand-resolved
+  conflict can't confuse the next run.
 
 The build step is `pnpm run build:desktop` +
 `ORCA_SKIP_GLIBC_FLOOR=1 pnpm exec electron-builder --config config/electron-builder.config.cjs --dir`.
