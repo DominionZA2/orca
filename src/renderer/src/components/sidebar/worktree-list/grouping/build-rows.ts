@@ -27,12 +27,9 @@ import type { ProjectGroupingModel } from './project-grouping'
 import { appendProjectGroupSections } from './project-group-sections'
 import { getPinnedSectionWorktrees } from '../../pinned-section-worktrees'
 import { emitPinnedGroup } from './pinned-group-rows'
-import {
-  appendFolderWorkspaceRows,
-  appendWorktreeRows,
-  buildPendingCreationRow
-} from './row-builders'
+import { appendWorktreeRows, buildPendingCreationRow } from './row-builders'
 import { getAttachedWorktreesByFolderWorkspaceId } from './folder-workspace-attached'
+import { appendFolderWorkspaceRows } from './folder-workspace-rows'
 import {
   compareFolderWorkspacesForDisplay,
   getRenderableFolderWorkspaces

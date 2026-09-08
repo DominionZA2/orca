@@ -14,7 +14,7 @@ import {
   recentRankForEntry,
   withRepoSectionDisplayLabels
 } from './section-order'
-import { appendFolderWorkspaceRows } from './row-builders'
+import { appendFolderWorkspaceRows } from './folder-workspace-rows'
 
 export function appendProjectGroupSections(
   ctx: SectionAppendContext,
