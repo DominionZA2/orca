@@ -7,12 +7,17 @@ import {
 import { parseWslUncPath } from '../shared/wsl-paths'
 import type { RuntimeClient } from './runtime-client'
 import { RuntimeClientError } from './runtime/types'
-import { getOptionalStringFlag, getRequiredStringFlag } from './flags'
 import {
-  getCallerExecutionHostId,
-  resolveCallerPaneWorktreeSelector,
-  selectEnclosingWorktreeOnHost
-} from './caller-host-worktree-selection'
+  assertLocalCwdWorktreeSelector,
+  resolveCurrentWorktreeSelector,
+  resolveOptionalCallerWorkspaceSelector
+} from './caller-workspace-selector'
+import { getOptionalStringFlag, getRequiredStringFlag } from './flags'
+
+export {
+  resolveCallerWorkspaceSelector,
+  resolveCurrentWorktreeSelector
+} from './caller-workspace-selector'
 
 export type BrowserCliTarget = {
   worktree?: string
@@ -89,45 +94,6 @@ export async function normalizeWorktreeSelectorForCaller(
   )
 }
 
-function assertLocalCwdWorktreeSelector(selector: string, client: RuntimeClient): void {
-  if (!client.isRemote) {
-    return
-  }
-  // Why: a paired CLI's cwd belongs to the client machine, not the runtime
-  // server, so cwd-derived worktree selectors are only valid locally.
-  throw new RuntimeClientError(
-    'invalid_argument',
-    `${selector} is a local cwd shortcut and cannot be resolved against a remote runtime. Pass an explicit server-side worktree selector such as identity:<identity>, id:<repo-id>::<path>, name:<displayName>, branch:<branch>, issue:<number>, or path:<absolute-server-path>.`
-  )
-}
-
-export async function resolveCurrentWorktreeSelector(
-  cwd: string,
-  client: RuntimeClient
-): Promise<string> {
-  assertLocalCwdWorktreeSelector('current', client)
-
-  const worktrees = await client.call<RuntimeWorktreeListResult>('worktree.list', {
-    limit: 10_000
-  })
-  // Why: users expect "active/current" to mean the enclosing managed worktree
-  // even from nested subdirectories. Resolve to the concrete runtime row here:
-  // duplicate repo registrations can expose the same Git worktree path, and a
-  // path selector would throw selector_ambiguous after losing the repo id.
-  const selector = selectEnclosingWorktreeOnHost(
-    worktrees.result.worktrees,
-    cwd,
-    getCallerExecutionHostId()
-  )
-  if (!selector) {
-    throw new RuntimeClientError(
-      'selector_not_found',
-      `No Orca-managed worktree contains the current directory: ${resolvePath(cwd)}`
-    )
-  }
-  return selector
-}
-
 export async function getOptionalWorktreeSelector(
   flags: Map<string, string | boolean>,
   name: string,
@@ -159,8 +125,8 @@ export async function getRequiredWorktreeSelector(
   return await normalizeWorktreeSelectorForCaller(value, cwd, client)
 }
 
-// Why: local browser commands default to the current worktree by auto-resolving
-// from cwd. Remote commands omit worktree so the runtime uses server-side focus.
+// Why: local browser commands default to the workspace the caller's terminal belongs to.
+// Remote commands omit worktree so the runtime uses server-side focus.
 export async function getBrowserWorktreeSelector(
   flags: Map<string, string | boolean>,
   cwd: string,
@@ -177,16 +143,7 @@ export async function getBrowserWorktreeSelector(
     }
     return await normalizeWorktreeSelectorForCaller(value, cwd, client)
   }
-  if (client.isRemote) {
-    return undefined
-  }
-  // Default: auto-resolve from cwd
-  try {
-    return await resolveCurrentWorktreeSelector(cwd, client)
-  } catch {
-    // Not inside a managed worktree — no filter
-    return undefined
-  }
+  return await resolveOptionalCallerWorkspaceSelector(cwd, client)
 }
 
 // Why: mirrors browser's implicit active-tab targeting. When --terminal is
@@ -285,25 +242,7 @@ export async function getEmulatorWorktreeSelector(
     }
     return explicit
   }
-  if (client.isRemote) {
-    return undefined
-  }
-  const terminalWorktreeId = process.env.ORCA_WORKTREE_ID
-  if (terminalWorktreeId?.trim()) {
-    const scoped = await resolveCallerPaneWorktreeSelector(terminalWorktreeId, client)
-    if (scoped) {
-      return scoped
-    }
-  }
-  const folderWorkspaceId = process.env.ORCA_WORKSPACE_ID?.trim()
-  if (folderWorkspaceId?.startsWith('folder:')) {
-    return folderWorkspaceId
-  }
-  try {
-    return await resolveCurrentWorktreeSelector(cwd, client)
-  } catch {
-    return undefined
-  }
+  return await resolveOptionalCallerWorkspaceSelector(cwd, client)
 }
 
 export async function getEmulatorCommandTarget(
