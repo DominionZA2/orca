@@ -37,6 +37,18 @@ function makeFolderParent(overrides: Partial<FolderWorkspace> = {}): ResolvedWor
   }
 }
 
+function makeStore(): RuntimeStore {
+  return {
+    getRepos: vi.fn(() => []),
+    getProjectGroups: vi.fn(() => []),
+    setWorktreeMeta: vi.fn(),
+    setWorktreeMetaForHost: vi.fn(),
+    setWorktreeLineage: vi.fn(),
+    removeWorktreeLineage: vi.fn(),
+    setWorkspaceLineage: vi.fn()
+  } as unknown as RuntimeStore
+}
+
 function makePorts(worktree: ResolvedWorktree, parent?: ResolvedWorkspaceParent) {
   return {
     resolveWorktree: vi.fn(async () => worktree),
@@ -57,14 +69,7 @@ function makePorts(worktree: ResolvedWorktree, parent?: ResolvedWorkspaceParent)
 describe('updateRuntimeManagedWorktreeMetadata', () => {
   it('writes metadata through the resolved worktree execution host', async () => {
     const worktree = makeWorktree({ hostId: 'ssh:build-box' })
-    const setWorktreeMeta = vi.fn()
-    const setWorktreeMetaForHost = vi.fn()
-    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the update only reads these store members.
-    const store = {
-      getRepos: () => [],
-      setWorktreeMeta,
-      setWorktreeMetaForHost
-    } as unknown as RuntimeStore
+    const store = makeStore()
 
     await updateRuntimeManagedWorktreeMetadata({
       selector: `id:${worktree.id}`,
@@ -73,10 +78,10 @@ describe('updateRuntimeManagedWorktreeMetadata', () => {
       ports: makePorts(worktree)
     })
 
-    expect(setWorktreeMetaForHost).toHaveBeenCalledWith(worktree.id, 'ssh:build-box', {
+    expect(store.setWorktreeMetaForHost).toHaveBeenCalledWith(worktree.id, 'ssh:build-box', {
       comment: 'remote row only'
     })
-    expect(setWorktreeMeta).not.toHaveBeenCalled()
+    expect(store.setWorktreeMeta).not.toHaveBeenCalled()
   })
 
   describe('a folder workspace removed while its resolution was in flight (#22712)', () => {
@@ -130,14 +135,7 @@ describe('updateRuntimeManagedWorktreeMetadata', () => {
 
   it('attaches a worktree to a folder workspace parent through workspace lineage only', async () => {
     const worktree = makeWorktree()
-    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the update only reads these store members.
-    const store = {
-      getRepos: () => [],
-      setWorktreeMeta: vi.fn(),
-      setWorktreeLineage: vi.fn(),
-      removeWorktreeLineage: vi.fn(),
-      setWorkspaceLineage: vi.fn()
-    } as unknown as RuntimeStore
+    const store = makeStore()
     const ports = makePorts(worktree, makeFolderParent())
 
     await updateRuntimeManagedWorktreeMetadata({
@@ -164,17 +162,43 @@ describe('updateRuntimeManagedWorktreeMetadata', () => {
     expect(ports.notifyChanged).toHaveBeenCalledWith('repo-1')
   })
 
+  it('attaches a runtime-hosted worktree to a local folder workspace', async () => {
+    // A runtime environment's own server is local to the work it runs, so the
+    // folder's `local` answer is the same host the worktree reports.
+    const worktree = makeWorktree({ hostId: 'runtime:env-1' })
+    const store = makeStore()
+
+    await updateRuntimeManagedWorktreeMetadata({
+      selector: `id:${worktree.id}`,
+      updates: { lineage: { parentWorktree: 'folder:fw-1' } },
+      store,
+      ports: makePorts(worktree, makeFolderParent())
+    })
+
+    expect(store.setWorkspaceLineage).toHaveBeenCalledWith(
+      expect.objectContaining({ parentWorkspaceKey: 'folder:fw-1' })
+    )
+  })
+
+  it('attaches an ssh worktree to a folder workspace on the same ssh target', async () => {
+    const worktree = makeWorktree({ hostId: 'ssh:build-box' })
+    const store = makeStore()
+
+    await updateRuntimeManagedWorktreeMetadata({
+      selector: `id:${worktree.id}`,
+      updates: { lineage: { parentWorktree: 'folder:fw-1' } },
+      store,
+      ports: makePorts(worktree, makeFolderParent({ connectionId: 'build-box' }))
+    })
+
+    expect(store.setWorkspaceLineage).toHaveBeenCalledWith(
+      expect.objectContaining({ parentWorkspaceKey: 'folder:fw-1' })
+    )
+  })
+
   it('rejects a folder workspace parent on a different execution host', async () => {
     const worktree = makeWorktree({ hostId: 'ssh:build-box' })
-    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the update only reads these store members.
-    const store = {
-      getRepos: () => [],
-      setWorktreeMeta: vi.fn(),
-      setWorktreeMetaForHost: vi.fn(),
-      setWorktreeLineage: vi.fn(),
-      removeWorktreeLineage: vi.fn(),
-      setWorkspaceLineage: vi.fn()
-    } as unknown as RuntimeStore
+    const store = makeStore()
 
     await expect(
       updateRuntimeManagedWorktreeMetadata({
@@ -187,5 +211,21 @@ describe('updateRuntimeManagedWorktreeMetadata', () => {
 
     expect(store.setWorkspaceLineage).not.toHaveBeenCalled()
     expect(store.removeWorktreeLineage).not.toHaveBeenCalled()
+  })
+
+  it('rejects a folder workspace parent on a different ssh target', async () => {
+    const worktree = makeWorktree({ hostId: 'ssh:build-box' })
+    const store = makeStore()
+
+    await expect(
+      updateRuntimeManagedWorktreeMetadata({
+        selector: `id:${worktree.id}`,
+        updates: { lineage: { parentWorktree: 'folder:fw-1' } },
+        store,
+        ports: makePorts(worktree, makeFolderParent({ connectionId: 'other-box' }))
+      })
+    ).rejects.toMatchObject({ code: 'LINEAGE_PARENT_CONTEXT_CONFLICT' })
+
+    expect(store.setWorkspaceLineage).not.toHaveBeenCalled()
   })
 })
