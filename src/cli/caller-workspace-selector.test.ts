@@ -134,6 +134,20 @@ describe('the workspace an unscoped CLI command targets', () => {
     ).resolves.toBeUndefined()
   })
 
+  it('refuses to run unscoped when the terminal names a workspace it cannot resolve', async () => {
+    // A `worktree:` stamp is a legal workspace key that is not a Folder Workspace, so the caller
+    // falls through to cwd — and from a directory no workspace claims, there is no answer left.
+    process.env.ORCA_WORKSPACE_ID = 'worktree:repo::/tmp/repo/gone'
+    const { client } = makeClient(['/tmp/repo/feature'])
+
+    await expect(
+      getBrowserWorktreeSelector(flags(), '/tmp/unmanaged', client)
+    ).rejects.toMatchObject({
+      code: 'selector_not_found',
+      message: expect.stringContaining('worktree:repo::/tmp/repo/gone')
+    })
+  })
+
   it('leaves a remote client on server-side focus', async () => {
     process.env.ORCA_WORKTREE_ID = WORKTREE_ID
     const { client, call } = makeClient([], true)
