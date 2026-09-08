@@ -144,6 +144,11 @@ export async function resolveCallerWorkspaceSelector(
   )
 }
 
+/** The workspace stamp Orca put in this terminal, even when it names nothing the CLI can resolve. */
+function getOrcaTerminalWorkspaceStamp(): string | undefined {
+  return process.env.ORCA_WORKTREE_ID?.trim() || process.env.ORCA_WORKSPACE_ID?.trim() || undefined
+}
+
 /** The same default, for commands that may run unscoped rather than fail. */
 export async function resolveOptionalCallerWorkspaceSelector(
   cwd: string,
@@ -154,8 +159,17 @@ export async function resolveOptionalCallerWorkspaceSelector(
   }
   try {
     return await resolveCallerWorkspaceSelector(cwd, client)
-  } catch {
-    // Not inside a managed workspace — no filter
-    return undefined
+  } catch (error) {
+    const terminalWorkspace = getOrcaTerminalWorkspaceStamp()
+    if (!terminalWorkspace) {
+      // Not inside a managed workspace — no filter
+      return undefined
+    }
+    // Why: running unscoped from an Orca terminal hands the command to whichever workspace the
+    // app has focused, so an agent silently drives someone else's screen. Refuse instead.
+    throw new RuntimeClientError(
+      'selector_not_found',
+      `This terminal belongs to Orca workspace ${terminalWorkspace}, which could not be resolved: ${error instanceof Error ? error.message : String(error)}. Pass an explicit --worktree selector, or --worktree all to run unscoped.`
+    )
   }
 }
