@@ -9,14 +9,22 @@ import { useOrcaTerminalWorkspaceEnvironment } from './index-test-harness'
 import {
   getBrowserWorktreeSelector,
   getEmulatorWorktreeSelector,
-  resolveCallerWorkspaceSelector
+  resolveCallerWorkspaceSelector,
+  resolveCurrentWorktreeSelector
 } from './selectors'
 
 const FOLDER_KEY = 'folder:52d2e7a3-c08f-4d0e-9771-f7581df19b6c'
 const WORKTREE_ID = 'repo::/tmp/repo/feature'
 
-function makeClient(worktreePaths: readonly string[] = [], isRemote = false) {
+function makeClient(
+  worktreePaths: readonly string[] = [],
+  isRemote = false,
+  folderWorkspaces: readonly { id: string; folderPath: string }[] = []
+) {
   const call = vi.fn(async (method: string) => {
+    if (method === 'folderWorkspace.list') {
+      return { result: { folderWorkspaces } }
+    }
     if (method !== 'worktree.list') {
       throw new Error(`unexpected method ${method}`)
     }
@@ -155,5 +163,47 @@ describe('the workspace an unscoped CLI command targets', () => {
     await expect(getEmulatorWorktreeSelector(flags(), '/elsewhere', client)).resolves.toBe(
       FOLDER_KEY
     )
+  })
+})
+
+describe('resolving the current directory against every managed workspace', () => {
+  useOrcaTerminalWorkspaceEnvironment()
+
+  const TICKET_FOLDER = [{ id: 'folder-1', folderPath: '/tmp/tickets/API-783' }]
+
+  it('resolves a Folder Workspace root that matches no git worktree', async () => {
+    const { client, call } = makeClient([], false, TICKET_FOLDER)
+
+    await expect(resolveCurrentWorktreeSelector('/tmp/tickets/API-783', client)).resolves.toBe(
+      'folder:folder-1'
+    )
+    expect(call).toHaveBeenNthCalledWith(1, 'worktree.list', { limit: 10_000 })
+    expect(call).toHaveBeenNthCalledWith(2, 'folderWorkspace.list')
+  })
+
+  it('resolves a subdirectory of a Folder Workspace to that folder', async () => {
+    const { client } = makeClient([], false, TICKET_FOLDER)
+
+    await expect(
+      resolveCurrentWorktreeSelector('/tmp/tickets/API-783/notes', client)
+    ).resolves.toBe('folder:folder-1')
+  })
+
+  it('prefers a git worktree nested inside the ticket folder', async () => {
+    const { client, call } = makeClient(['/tmp/tickets/API-783/pos_frontend'], false, TICKET_FOLDER)
+
+    await expect(
+      resolveCurrentWorktreeSelector('/tmp/tickets/API-783/pos_frontend/src', client)
+    ).resolves.toBe('id:repo::/tmp/tickets/API-783/pos_frontend')
+    // Why: the worktree already answers the question, so the folder catalog is never read.
+    expect(call).toHaveBeenCalledOnce()
+  })
+
+  it('refuses a directory no managed workspace contains', async () => {
+    const { client } = makeClient(['/tmp/repo/feature'], false, TICKET_FOLDER)
+
+    await expect(resolveCurrentWorktreeSelector('/tmp/elsewhere', client)).rejects.toMatchObject({
+      code: 'selector_not_found'
+    })
   })
 })
