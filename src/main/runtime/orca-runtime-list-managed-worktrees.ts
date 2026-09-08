@@ -114,8 +114,10 @@ export class OrcaRuntimeWithListManagedWorktrees extends OrcaRuntimeWithRestoreS
     )
   }
 
+  // Why the folder-aware resolver: `worktree current` reports `folder:<id>` for a terminal in a
+  // Folder Workspace, and `worktree show` must be able to look that answer back up.
   async showManagedWorktree(worktreeSelector: string) {
-    return await this.resolveWorktreeSelector(worktreeSelector)
+    return await this.resolveBrowserWorkspace(worktreeSelector)
   }
 
   async showManagedTerminalWorkspace(worktreeSelector: string) {
