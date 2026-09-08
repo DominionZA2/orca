@@ -15,8 +15,8 @@ import {
   getMixedHostContextLabels
 } from './host-labels'
 import type { OrderedGroupEntry, ProjectGroupingIndex } from './project-grouping'
+import { appendFolderWorkspaceRows } from './folder-workspace-rows'
 import {
-  appendFolderWorkspaceRows,
   appendWorktreeRows,
   buildImportedWorktreesCardRow,
   buildNewExternalWorktreesInboxRow,
