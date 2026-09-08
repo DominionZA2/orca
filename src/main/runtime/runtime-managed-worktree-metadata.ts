@@ -3,8 +3,11 @@ import type { WorktreeMeta } from '../../shared/worktree/meta-types'
 import { worktreeWorkspaceKey } from '../../shared/workspace-scope'
 import { splitWorktreeId } from '../../shared/worktree/id'
 import { planWorktreeSortOrderUpdates } from '../../shared/worktree/sort-order-update'
-import { folderWorkspaceToWorktree } from '../../shared/folder-workspace-worktree'
-import { LOCAL_EXECUTION_HOST_ID } from '../../shared/execution-host'
+import {
+  resolveFolderWorkspaceHost,
+  type FolderWorkspaceHost
+} from '../../shared/folder-workspace-execution-host'
+import { LOCAL_EXECUTION_HOST_ID, parseExecutionHostId } from '../../shared/execution-host'
 import { stripOrcaProvenanceMetaUpdates } from '../worktree-removal-safety'
 import type { RuntimeStore } from './runtime-store-contract'
 import {
@@ -66,13 +69,19 @@ export async function updateRuntimeManagedWorktreeMetadata(args: {
       // Why: a folder workspace has no repo or project, so the worktree boundary
       // rules do not apply — but the hosts must match, or the folder view could
       // never show the row it now claims.
-      const worktreeHostId =
-        worktree.identity?.executionHostId ?? worktree.hostId ?? LOCAL_EXECUTION_HOST_ID
-      if (worktreeHostId !== folderWorkspaceToWorktree(parent.folderWorkspace).hostId) {
-        throw new RuntimeLineageError(
-          'LINEAGE_PARENT_CONTEXT_CONFLICT',
-          'Parent folder workspace must belong to the same execution host.'
-        )
+      const hostConflict = describeFolderParentHostConflict(
+        resolveFolderWorkspaceHost(
+          {
+            folderWorkspaces: [parent.folderWorkspace],
+            projectGroups: args.store.getProjectGroups?.() ?? [],
+            repos: args.store.getRepos()
+          },
+          parent.folderWorkspace.id
+        ),
+        worktree
+      )
+      if (hostConflict) {
+        throw new RuntimeLineageError('LINEAGE_PARENT_CONTEXT_CONFLICT', hostConflict)
       }
       if (!worktree.instanceId) {
         throw new RuntimeLineageError(
@@ -143,6 +152,35 @@ export async function updateRuntimeManagedWorktreeMetadata(args: {
   args.ports.invalidateResolved()
   args.ports.notifyChanged(worktree.repoId)
   return args.ports.showWorktree(`id:${worktree.id}`)
+}
+
+/**
+ * The reason a worktree may not hang off this folder workspace, or `null` when it may.
+ *
+ * Why resolve rather than compare projected host ids: a FolderWorkspace persists only its
+ * `connectionId` on this side — `executionHostId` is a renderer-owned stamp — so a projected
+ * comparison rejects every worktree on a `runtime:` host. Both sides are therefore reduced to the
+ * level `resolveFolderWorkspaceHost` answers at, where `local` and `runtime:` are the same answer
+ * because a runtime environment's own server is local to the work it runs.
+ */
+function describeFolderParentHostConflict(
+  folderHost: FolderWorkspaceHost,
+  worktree: ResolvedWorktree
+): string | null {
+  if (folderHost.kind === 'missing') {
+    return 'Parent folder workspace could not be resolved to an execution host.'
+  }
+  if (folderHost.kind === 'ambiguous') {
+    return 'Parent folder workspace spans more than one execution host.'
+  }
+  const worktreeHost = parseExecutionHostId(
+    worktree.identity?.executionHostId ?? worktree.hostId ?? LOCAL_EXECUTION_HOST_ID
+  )
+  const worktreeTargetId = worktreeHost?.kind === 'ssh' ? worktreeHost.targetId : null
+  const folderTargetId = folderHost.kind === 'ssh' ? folderHost.targetId : null
+  return worktreeTargetId === folderTargetId
+    ? null
+    : 'Parent folder workspace must belong to the same execution host.'
 }
 
 export function persistRuntimeManagedWorktreeSortOrder(args: {
