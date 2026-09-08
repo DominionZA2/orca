@@ -1,6 +1,8 @@
 import { resolve as resolvePath } from 'node:path'
-import type { RuntimeWorktreeListResult, RuntimeWorktreeRecord } from '../shared/runtime-types'
+import type { RuntimeWorktreeListResult } from '../shared/runtime-types'
+import type { FolderWorkspace } from '../shared/folder-workspace-types'
 import { isPathInsideOrEqual } from '../shared/cross-platform-path'
+import { folderWorkspaceKey } from '../shared/workspace-scope'
 import type { RuntimeClient } from './runtime-client'
 import { RuntimeClientError } from './runtime/types'
 
@@ -16,6 +18,28 @@ export function assertLocalCwdWorktreeSelector(selector: string, client: Runtime
   )
 }
 
+type EnclosingWorkspace = { selector: string; path: string }
+
+function findDeepestEnclosingWorkspace(
+  workspaces: readonly EnclosingWorkspace[],
+  currentPath: string
+): string | undefined {
+  let enclosingSelector: string | undefined
+  let enclosingPathLength = -1
+  for (const workspace of workspaces) {
+    const workspacePath = resolvePath(workspace.path)
+    if (
+      !isPathInsideOrEqual(workspacePath, currentPath) ||
+      workspacePath.length <= enclosingPathLength
+    ) {
+      continue
+    }
+    enclosingSelector = workspace.selector
+    enclosingPathLength = workspacePath.length
+  }
+  return enclosingSelector
+}
+
 export async function resolveCurrentWorktreeSelector(
   cwd: string,
   client: RuntimeClient
@@ -26,32 +50,38 @@ export async function resolveCurrentWorktreeSelector(
   const worktrees = await client.call<RuntimeWorktreeListResult>('worktree.list', {
     limit: 10_000
   })
-  let enclosingWorktree: RuntimeWorktreeRecord | undefined
-  let enclosingPathLength = -1
-  for (const worktree of worktrees.result.worktrees) {
-    const worktreePath = resolvePath(worktree.path)
-    if (
-      !isPathInsideOrEqual(worktreePath, currentPath) ||
-      worktreePath.length <= enclosingPathLength
-    ) {
-      continue
-    }
-    enclosingWorktree = worktree
-    enclosingPathLength = worktreePath.length
+  const enclosingWorktree = findDeepestEnclosingWorkspace(
+    // Why the concrete runtime id rather than the path: duplicate repo registrations can expose
+    // the same Git worktree path, and a path selector would throw selector_ambiguous after
+    // losing the repo id.
+    worktrees.result.worktrees.map((worktree) => ({
+      selector: `id:${worktree.id}`,
+      path: worktree.path
+    })),
+    currentPath
+  )
+  if (enclosingWorktree) {
+    return enclosingWorktree
   }
 
-  if (!enclosingWorktree) {
+  // Why only once no worktree claims the directory: a Folder Workspace is a folder that groups
+  // git worktrees, so any worktree match is already the deeper of the two, and the catalog read
+  // is paid only where this used to fail outright.
+  const folders = await client.call<{ folderWorkspaces: FolderWorkspace[] }>('folderWorkspace.list')
+  const enclosingFolder = findDeepestEnclosingWorkspace(
+    folders.result.folderWorkspaces.map((folder) => ({
+      selector: folderWorkspaceKey(folder.id),
+      path: folder.folderPath
+    })),
+    currentPath
+  )
+  if (!enclosingFolder) {
     throw new RuntimeClientError(
       'selector_not_found',
-      `No Orca-managed worktree contains the current directory: ${currentPath}`
+      `No Orca-managed workspace contains the current directory: ${currentPath}`
     )
   }
-
-  // Why: users expect "active/current" to mean the enclosing managed worktree
-  // even from nested subdirectories. Resolve to the concrete runtime id here:
-  // duplicate repo registrations can expose the same Git worktree path, and a
-  // path selector would throw selector_ambiguous after losing the repo id.
-  return `id:${enclosingWorktree.id}`
+  return enclosingFolder
 }
 
 /**
