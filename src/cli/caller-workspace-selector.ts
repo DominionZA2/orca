@@ -1,6 +1,9 @@
 import { resolve as resolvePath } from 'node:path'
 import type { RuntimeWorktreeListResult } from '../shared/runtime-types'
+import type { FolderWorkspace } from '../shared/folder-workspace-types'
+import { isPathInsideOrEqual } from '../shared/cross-platform-path'
 import { LOCAL_EXECUTION_HOST_ID } from '../shared/execution-host'
+import { folderWorkspaceKey } from '../shared/workspace-scope'
 import type { RuntimeClient } from './runtime-client'
 import { RuntimeClientError } from './runtime/types'
 import {
@@ -20,6 +23,28 @@ export function assertLocalCwdWorktreeSelector(selector: string, client: Runtime
     'invalid_argument',
     `${selector} is a local cwd shortcut and cannot be resolved against a remote runtime. Pass an explicit server-side worktree selector such as identity:<identity>, id:<repo-id>::<path>, name:<displayName>, branch:<branch>, issue:<number>, or path:<absolute-server-path>.`
   )
+}
+
+type EnclosingWorkspace = { selector: string; path: string }
+
+function findDeepestEnclosingWorkspace(
+  workspaces: readonly EnclosingWorkspace[],
+  currentPath: string
+): string | undefined {
+  let enclosingSelector: string | undefined
+  let enclosingPathLength = -1
+  for (const workspace of workspaces) {
+    const workspacePath = resolvePath(workspace.path)
+    if (
+      !isPathInsideOrEqual(workspacePath, currentPath) ||
+      workspacePath.length <= enclosingPathLength
+    ) {
+      continue
+    }
+    enclosingSelector = workspace.selector
+    enclosingPathLength = workspacePath.length
+  }
+  return enclosingSelector
 }
 
 export async function resolveCurrentWorktreeSelector(
@@ -48,13 +73,29 @@ export async function resolveCurrentWorktreeSelection(
     getCallerExecutionHostId(),
     process.env.ORCA_WORKTREE_ID
   )
-  if (!selection) {
+  if (selection) {
+    return selection
+  }
+
+  // Why only once no worktree claims the directory: a Folder Workspace is a folder that groups
+  // git worktrees, so any worktree match is already the deeper of the two, and the catalog read
+  // is paid only where this used to fail outright.
+  const currentPath = resolvePath(cwd)
+  const folders = await client.call<{ folderWorkspaces: FolderWorkspace[] }>('folderWorkspace.list')
+  const enclosingFolder = findDeepestEnclosingWorkspace(
+    folders.result.folderWorkspaces.map((folder) => ({
+      selector: folderWorkspaceKey(folder.id),
+      path: folder.folderPath
+    })),
+    currentPath
+  )
+  if (!enclosingFolder) {
     throw new RuntimeClientError(
       'selector_not_found',
-      `No Orca-managed worktree contains the current directory: ${resolvePath(cwd)}`
+      `No Orca-managed workspace contains the current directory: ${currentPath}`
     )
   }
-  return selection
+  return { selector: enclosingFolder, worktreeId: enclosingFolder }
 }
 
 /**
