@@ -61,7 +61,6 @@ export abstract class OrcaRuntimeWithTerminalDrivers extends OrcaRuntimeWithFitO
     },
     browserHost: {
       getAgentBrowserBridge: () => this.agentBrowserBridge,
-      resolveWorktreeSelector: (selector) => this.resolveWorktreeSelector(selector),
       resolveBrowserWorkspace: (selector) => this.resolveBrowserWorkspace(selector),
       getBrowserHostLeaseRegistry: () => getBrowserHostLeaseRegistry(this),
       getRuntimeBrowserPageRegistry: () => getRuntimeBrowserPageRegistry(this),
