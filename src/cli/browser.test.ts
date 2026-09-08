@@ -35,10 +35,13 @@ vi.mock('./runtime-client', () => {
 })
 
 import { main } from './index'
+import { useOrcaTerminalWorkspaceEnvironment } from './index-test-harness'
 import { RuntimeClientError } from './runtime-client'
 import { buildWorktree, okFixture, queueFixtures, worktreeListFixture } from './test-fixtures'
 
 describe('orca cli browser page targeting', () => {
+  useOrcaTerminalWorkspaceEnvironment()
+
   beforeEach(() => {
     callMock.mockReset()
   })
@@ -197,18 +200,15 @@ describe('orca cli browser page targeting', () => {
   it('creates a tab in the calling folder workspace, not the parent sharing its path (#33618)', async () => {
     const parent = buildWorktree('/tmp/folder', '')
     const workspace = { ...parent, id: `${parent.id}::workspace:ws-2` }
-    queueFixtures(
-      callMock,
-      worktreeListFixture([parent, workspace]),
-      okFixture('req_tab_create', { browserPageId: 'page-1' })
-    )
+    queueFixtures(callMock, okFixture('req_tab_create', { browserPageId: 'page-1' }))
     vi.spyOn(console, 'log').mockImplementation(() => {})
     vi.stubEnv('ORCA_WORKTREE_ID', workspace.id)
 
     await main(['tab', 'create', '--url', 'https://example.com', '--json'], '/tmp/folder')
 
-    expect(callMock).toHaveBeenNthCalledWith(
-      2,
+    // The terminal's own stamp wins before any path lookup, so the shared path never decides.
+    expect(callMock).toHaveBeenCalledTimes(1)
+    expect(callMock).toHaveBeenCalledWith(
       'browser.tabCreate',
       { url: 'https://example.com', worktree: `id:${workspace.id}` },
       { timeoutMs: 60_000 }
