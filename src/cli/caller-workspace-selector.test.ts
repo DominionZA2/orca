@@ -16,10 +16,13 @@ import {
 const FOLDER_KEY = 'folder:52d2e7a3-c08f-4d0e-9771-f7581df19b6c'
 const WORKTREE_ID = 'repo::/tmp/repo/feature'
 
+/** A path alone keeps the local single-host shape; the object form names the host that owns it. */
+type WorktreeFixture = string | { path: string; repoId?: string; hostId?: string }
+
 function makeClient(
-  worktreePaths: readonly string[] = [],
+  worktreePaths: readonly WorktreeFixture[] = [],
   isRemote = false,
-  folderWorkspaces: readonly { id: string; folderPath: string }[] = []
+  folderWorkspaces: readonly { id: string; folderPath: string; connectionId?: string | null }[] = []
 ) {
   const call = vi.fn(async (method: string) => {
     if (method === 'folderWorkspace.list') {
@@ -28,7 +31,15 @@ function makeClient(
     if (method !== 'worktree.list') {
       throw new Error(`unexpected method ${method}`)
     }
-    const worktrees = worktreePaths.map((path) => ({ id: `repo::${path}`, path }))
+    const worktrees = worktreePaths.map((entry) => {
+      const fixture: Exclude<WorktreeFixture, string> =
+        typeof entry === 'string' ? { path: entry } : entry
+      return {
+        id: `${fixture.repoId ?? 'repo'}::${fixture.path}`,
+        path: fixture.path,
+        hostId: fixture.hostId
+      }
+    })
     return { result: { worktrees, totalCount: worktrees.length, truncated: false } }
   })
   return { client: { isRemote, call } as unknown as RuntimeClient, call }
@@ -211,6 +222,42 @@ describe('resolving the current directory against every managed workspace', () =
     ).resolves.toBe('id:repo::/tmp/tickets/API-783/pos_frontend')
     // Why: the worktree already answers the question, so the folder catalog is never read.
     expect(call).toHaveBeenCalledOnce()
+  })
+
+  it('prefers the local worktree over one at the same path on a paired host', async () => {
+    // Why: a repo checked out at the same absolute path on an SSH-paired host lists alongside the
+    // local one, and a local directory can only be inside the local copy.
+    const { client } = makeClient([
+      { path: '/home/msmit/Source/cloud_backend', repoId: 'remote-repo', hostId: 'ssh:dev-box' },
+      { path: '/home/msmit/Source/cloud_backend', repoId: 'local-repo', hostId: 'local' }
+    ])
+
+    await expect(
+      resolveCurrentWorktreeSelector('/home/msmit/Source/cloud_backend/src', client)
+    ).resolves.toBe('id:local-repo::/home/msmit/Source/cloud_backend')
+  })
+
+  it('falls through to the Folder Workspace when only a paired host claims that path', async () => {
+    const { client, call } = makeClient(
+      [{ path: '/tmp/tickets/API-783/pos_frontend', hostId: 'ssh:dev-box' }],
+      false,
+      TICKET_FOLDER
+    )
+
+    await expect(
+      resolveCurrentWorktreeSelector('/tmp/tickets/API-783/pos_frontend/src', client)
+    ).resolves.toBe('folder:folder-1')
+    expect(call).toHaveBeenNthCalledWith(2, 'folderWorkspace.list')
+  })
+
+  it('refuses a Folder Workspace whose folder lives on a paired host', async () => {
+    const { client } = makeClient([], false, [
+      { id: 'folder-remote', folderPath: '/tmp/tickets/API-783', connectionId: 'dev-box' }
+    ])
+
+    await expect(
+      resolveCurrentWorktreeSelector('/tmp/tickets/API-783/notes', client)
+    ).rejects.toMatchObject({ code: 'selector_not_found' })
   })
 
   it('refuses a directory no managed workspace contains', async () => {
