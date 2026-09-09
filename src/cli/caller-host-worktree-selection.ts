@@ -25,7 +25,10 @@ export function getCallerExecutionHostId(
 // Why: the catalog lists SSH hosts' worktrees too and two hosts can hold the same path, so an SSH
 // caller may only take its own host's rows and a local caller none of an SSH host's. `runtime:*`
 // rows in this runtime's catalog are checkouts it holds itself, and unstamped rows predate stamping.
-function isOnCallerHost(row: CatalogRow, callerHostId: ExecutionHostId): boolean {
+export function isOnCallerHost(
+  row: Pick<CatalogRow, 'hostId'>,
+  callerHostId: ExecutionHostId
+): boolean {
   const rowHostId = row.hostId ?? LOCAL_EXECUTION_HOST_ID
   return parseExecutionHostId(callerHostId)?.kind === 'ssh'
     ? rowHostId === callerHostId
