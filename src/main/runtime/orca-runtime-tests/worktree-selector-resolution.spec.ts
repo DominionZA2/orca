@@ -147,7 +147,9 @@ describe('OrcaRuntimeService', () => {
   ])('shows the folder workspace named by a $label', async ({ selector }) => {
     // Why: `worktree current` reports `folder:<id>` for a terminal in a Folder Workspace, so
     // `worktree show` has to be able to look that same answer back up.
-    const folderPath = await mkdtemp(join(tmpdir(), 'orca-runtime-folder-show-'))
+    // Why the folder is never created on disk: showing a row is a catalog read, so it answers from
+    // the store through the plain resolver and must not gate on the path the way a browser does.
+    const folderPath = join(tmpdir(), 'orca-runtime-folder-show-missing')
     const folderWorkspace = makeFolderWorkspace({ folderPath })
     const projectGroup = makeFolderProjectGroup({ parentPath: folderPath })
     const runtime = new OrcaRuntimeService(
