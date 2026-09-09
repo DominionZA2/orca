@@ -2,6 +2,7 @@ import { resolve as resolvePath } from 'node:path'
 import type { RuntimeWorktreeListResult } from '../shared/runtime-types'
 import type { FolderWorkspace } from '../shared/folder-workspace-types'
 import { isPathInsideOrEqual } from '../shared/cross-platform-path'
+import { parseExecutionHostId } from '../shared/execution-host'
 import { folderWorkspaceKey } from '../shared/workspace-scope'
 import type { RuntimeClient } from './runtime-client'
 import { RuntimeClientError } from './runtime/types'
@@ -19,6 +20,27 @@ export function assertLocalCwdWorktreeSelector(selector: string, client: Runtime
 }
 
 type EnclosingWorkspace = { selector: string; path: string }
+
+/**
+ * Why: both catalogs span every paired host, and the same absolute path exists on more than one of
+ * them — so matching a local directory by path alone can answer with another machine's workspace.
+ * A local cwd can only sit inside a workspace this machine holds, and `runtime:<env>` is how a
+ * paired client addresses rows the connected server holds itself (see
+ * `runtime-repository-registration-controller`, and the runtime note in
+ * `resolveFolderWorkspaceHost`), so only an `ssh:` host — or one this build cannot name at all —
+ * is a different filesystem.
+ */
+function isLocalExecutionHost(hostId: string | null | undefined): boolean {
+  const kind = hostId ? parseExecutionHostId(hostId)?.kind : 'local'
+  return kind === 'local' || kind === 'runtime'
+}
+
+/** Host precedence the renderer's folder resolver uses: the stamp wins, then the legacy SSH field. */
+function isLocalFolderWorkspace(folder: FolderWorkspace): boolean {
+  return folder.executionHostId
+    ? isLocalExecutionHost(folder.executionHostId)
+    : !folder.connectionId?.trim()
+}
 
 function findDeepestEnclosingWorkspace(
   workspaces: readonly EnclosingWorkspace[],
@@ -54,10 +76,12 @@ export async function resolveCurrentWorktreeSelector(
     // Why the concrete runtime id rather than the path: duplicate repo registrations can expose
     // the same Git worktree path, and a path selector would throw selector_ambiguous after
     // losing the repo id.
-    worktrees.result.worktrees.map((worktree) => ({
-      selector: `id:${worktree.id}`,
-      path: worktree.path
-    })),
+    worktrees.result.worktrees
+      .filter((worktree) => isLocalExecutionHost(worktree.hostId))
+      .map((worktree) => ({
+        selector: `id:${worktree.id}`,
+        path: worktree.path
+      })),
     currentPath
   )
   if (enclosingWorktree) {
@@ -69,7 +93,7 @@ export async function resolveCurrentWorktreeSelector(
   // is paid only where this used to fail outright.
   const folders = await client.call<{ folderWorkspaces: FolderWorkspace[] }>('folderWorkspace.list')
   const enclosingFolder = findDeepestEnclosingWorkspace(
-    folders.result.folderWorkspaces.map((folder) => ({
+    folders.result.folderWorkspaces.filter(isLocalFolderWorkspace).map((folder) => ({
       selector: folderWorkspaceKey(folder.id),
       path: folder.folderPath
     })),
