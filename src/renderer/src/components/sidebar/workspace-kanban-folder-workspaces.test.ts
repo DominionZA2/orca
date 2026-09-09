@@ -5,7 +5,7 @@ import type { Worktree } from '../../../../shared/worktree/types'
 import { folderWorkspaceKey, worktreeWorkspaceKey } from '../../../../shared/workspace-scope'
 import { buildWorkspaceBoardWorktrees } from './workspace-kanban-folder-workspaces'
 
-function worktree(id: string): Worktree {
+function worktree(id: string, overrides: Partial<Worktree> = {}): Worktree {
   return {
     id,
     repoId: 'repo-a',
@@ -16,7 +16,8 @@ function worktree(id: string): Worktree {
     isArchived: false,
     sortOrder: 0,
     lastActivityAt: 1,
-    workspaceStatus: 'todo'
+    workspaceStatus: 'todo',
+    ...overrides
   } as unknown as Worktree
 }
 
@@ -40,9 +41,14 @@ function folderWorkspace(overrides: Partial<FolderWorkspace> = {}): FolderWorksp
   }
 }
 
-function attached(folderId: string, worktreeId: string): WorkspaceLineage {
+function attached(
+  folderId: string,
+  worktreeId: string,
+  childInstanceId?: string
+): WorkspaceLineage {
   return {
     childWorkspaceKey: worktreeWorkspaceKey(worktreeId),
+    ...(childInstanceId ? { childInstanceId } : {}),
     parentWorkspaceKey: folderWorkspaceKey(folderId),
     origin: 'manual',
     capture: { source: 'manual-action', confidence: 'explicit' },
@@ -75,6 +81,22 @@ describe('buildWorkspaceBoardWorktrees', () => {
     })
 
     expect(rows.map((row) => row.id)).toEqual(['repo-a::/alpha', 'folder:fw-1'])
+  })
+
+  it('keeps the other host row on the board when one of two same-id instances is attached', () => {
+    const rows = buildWorkspaceBoardWorktrees({
+      worktrees: [
+        worktree('repo-a::/alpha', { hostId: 'local', instanceId: 'local-1' }),
+        worktree('repo-a::/alpha', { hostId: 'ssh:build-box', instanceId: 'remote-1' })
+      ],
+      folderWorkspaces: [folderWorkspace()],
+      workspaceLineageByChildKey: {
+        [worktreeWorkspaceKey('repo-a::/alpha')]: attached('fw-1', 'repo-a::/alpha', 'remote-1')
+      }
+    })
+
+    expect(rows.map((row) => row.id)).toEqual(['repo-a::/alpha', 'folder:fw-1'])
+    expect(rows[0].hostId).toBe('local')
   })
 
   it('keeps an attached worktree on the board when its folder workspace is archived', () => {

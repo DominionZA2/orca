@@ -1,5 +1,6 @@
 import type { FolderWorkspace } from '../../../../shared/folder-workspace-types'
 import { folderWorkspaceToWorktree } from '../../../../shared/folder-workspace-worktree'
+import { getWorktreeHostIdentity } from '../../../../shared/worktree/host-qualified-identity'
 import type { WorkspaceLineage } from '../../../../shared/worktree/lineage-types'
 import type { Worktree } from '../../../../shared/worktree/types'
 import { getAttachedWorktreesByFolderWorkspaceId } from './worktree-list/grouping/folder-workspace-attached'
@@ -21,13 +22,18 @@ export function buildWorkspaceBoardWorktrees(args: {
     args.worktrees,
     args.workspaceLineageByChildKey
   )
-  const attachedIds = new Set(
+  // Why: a worktree id is `repoId::path` with no host component, so two hosts can publish the same
+  // id for two different workspaces. Folding on the bare id dropped both rows when only one of them
+  // was attached; the grouping already returns the host-specific child, so key on its identity.
+  const attachedIdentities = new Set(
     folderWorkspaces.flatMap((workspace) =>
-      (attachedByFolderId.get(workspace.id) ?? []).map((worktree) => worktree.id)
+      (attachedByFolderId.get(workspace.id) ?? []).map(getWorktreeHostIdentity)
     )
   )
   return [
-    ...args.worktrees.filter((worktree) => !attachedIds.has(worktree.id)),
+    ...args.worktrees.filter(
+      (worktree) => !attachedIdentities.has(getWorktreeHostIdentity(worktree))
+    ),
     ...folderWorkspaces.map(folderWorkspaceToWorktree)
   ]
 }
