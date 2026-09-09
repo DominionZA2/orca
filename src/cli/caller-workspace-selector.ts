@@ -2,12 +2,17 @@ import { resolve as resolvePath } from 'node:path'
 import type { RuntimeWorktreeListResult } from '../shared/runtime-types'
 import type { FolderWorkspace } from '../shared/folder-workspace-types'
 import { isPathInsideOrEqual } from '../shared/cross-platform-path'
-import { LOCAL_EXECUTION_HOST_ID } from '../shared/execution-host'
+import {
+  getConnectionExecutionHostId,
+  LOCAL_EXECUTION_HOST_ID,
+  type ExecutionHostId
+} from '../shared/execution-host'
 import { folderWorkspaceKey } from '../shared/workspace-scope'
 import type { RuntimeClient } from './runtime-client'
 import { RuntimeClientError } from './runtime/types'
 import {
   getCallerExecutionHostId,
+  isOnCallerHost,
   resolveCallerPaneWorktreeSelector,
   selectEnclosingWorktreeSelectionOnHost,
   type HostScopedWorktreeSelection
@@ -26,6 +31,15 @@ export function assertLocalCwdWorktreeSelector(selector: string, client: Runtime
 }
 
 type EnclosingWorkspace = { selector: string; path: string }
+
+// Why: the folder catalog spans every paired host and the same path can exist on two of them;
+// the daemon's folder rows carry their SSH pin in `connectionId` only.
+function isFolderOnCallerHost(folder: FolderWorkspace, callerHostId: ExecutionHostId): boolean {
+  return isOnCallerHost(
+    { hostId: getConnectionExecutionHostId(folder.connectionId?.trim()) },
+    callerHostId
+  )
+}
 
 function findDeepestEnclosingWorkspace(
   workspaces: readonly EnclosingWorkspace[],
@@ -67,10 +81,11 @@ export async function resolveCurrentWorktreeSelection(
   // even from nested subdirectories. Resolve to the concrete runtime row here:
   // duplicate repo registrations can expose the same Git worktree path, and a
   // path selector would throw selector_ambiguous after losing the repo id.
+  const callerHostId = getCallerExecutionHostId()
   const selection = selectEnclosingWorktreeSelectionOnHost(
     worktrees.result.worktrees,
     cwd,
-    getCallerExecutionHostId(),
+    callerHostId,
     process.env.ORCA_WORKTREE_ID
   )
   if (selection) {
@@ -83,10 +98,12 @@ export async function resolveCurrentWorktreeSelection(
   const currentPath = resolvePath(cwd)
   const folders = await client.call<{ folderWorkspaces: FolderWorkspace[] }>('folderWorkspace.list')
   const enclosingFolder = findDeepestEnclosingWorkspace(
-    folders.result.folderWorkspaces.map((folder) => ({
-      selector: folderWorkspaceKey(folder.id),
-      path: folder.folderPath
-    })),
+    folders.result.folderWorkspaces
+      .filter((folder) => isFolderOnCallerHost(folder, callerHostId))
+      .map((folder) => ({
+        selector: folderWorkspaceKey(folder.id),
+        path: folder.folderPath
+      })),
     currentPath
   )
   if (!enclosingFolder) {
