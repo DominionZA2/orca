@@ -35,11 +35,9 @@ function isLocalExecutionHost(hostId: string | null | undefined): boolean {
   return kind === 'local' || kind === 'runtime'
 }
 
-/** Host precedence the renderer's folder resolver uses: the stamp wins, then the legacy SSH field. */
+/** Why: the daemon's folder rows carry their SSH pin in `connectionId` only. */
 function isLocalFolderWorkspace(folder: FolderWorkspace): boolean {
-  return folder.executionHostId
-    ? isLocalExecutionHost(folder.executionHostId)
-    : !folder.connectionId?.trim()
+  return !folder.connectionId?.trim()
 }
 
 function findDeepestEnclosingWorkspace(
