@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import { app, powerMonitor } from 'electron'
 import type { BrowserWindow } from 'electron'
 import { is } from '@electron-toolkit/utils'
@@ -33,22 +35,41 @@ export type UpdaterSetupOptions = {
   installMode?: UpdateInstallMode
 }
 
+function isManagedSelfbuild(): boolean {
+  return (
+    process.env.ORCA_SELFBUILT_MANAGED === '1' ||
+    Boolean(
+      process.resourcesPath && existsSync(join(process.resourcesPath, 'selfbuilt-managed.json'))
+    )
+  )
+}
+
 /** Initializes electron-updater and attaches lifecycle/event bridges. */
 export class UpdaterSetup extends UpdaterDownloadInstall {
   checkForUpdates(): void {
-    this.checkForUpdatesInBackground()
+    if (!isManagedSelfbuild()) {
+      this.checkForUpdatesInBackground()
+    }
   }
 
   checkForUpdatesFromMenu(options?: UpdateCheckOptions): void {
+    if (isManagedSelfbuild()) {
+      this.sendErrorStatus('Updates are managed by the Orca self-built updater.', true)
+      return
+    }
     super.checkForUpdatesFromMenu(options)
   }
 
   downloadUpdate(): void {
-    super.downloadUpdate()
+    if (!isManagedSelfbuild()) {
+      super.downloadUpdate()
+    }
   }
 
   quitAndInstall(): void {
-    super.quitAndInstall()
+    if (!isManagedSelfbuild()) {
+      super.quitAndInstall()
+    }
   }
 
   isQuittingForUpdate(): boolean {
@@ -132,7 +153,8 @@ export class UpdaterSetup extends UpdaterDownloadInstall {
     if (!app.isPackaged && !is.dev) {
       return
     }
-    if (is.dev) {
+    // Self-built releases keep Authenticode config but delegate updates to their local builder.
+    if (is.dev || isManagedSelfbuild()) {
       return
     }
 

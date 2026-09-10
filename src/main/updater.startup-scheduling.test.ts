@@ -1,4 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { loadUpdaterModule, warmUpdaterModule } from './updater-test-module-loader'
 
 const {
@@ -29,6 +32,8 @@ vi.mock('./local-builds/local-build-feed-server', () => moduleFactories.localBui
 warmUpdaterModule()
 
 describe('updater', () => {
+  afterEach(() => vi.unstubAllEnvs())
+
   beforeEach(() => {
     resetUpdaterMocks()
     vi.useFakeTimers()
@@ -47,6 +52,61 @@ describe('updater', () => {
     expect(autoUpdaterMock.setFeedURL).not.toHaveBeenCalled()
     expect(autoUpdaterMock.checkForUpdates).not.toHaveBeenCalled()
     expect(powerMonitorOnMock).not.toHaveBeenCalled()
+  })
+
+  it('delegates managed self-build updates without loading the release updater or stopping terminals', async () => {
+    vi.stubEnv('ORCA_SELFBUILT_MANAGED', '1')
+    const send = vi.fn()
+    const updater = await loadUpdaterModule()
+    updater.setupAutoUpdater({ webContents: { send } } as never)
+    updater.checkForUpdates()
+    updater.checkForUpdatesFromMenu({ localBuild: true })
+    updater.downloadUpdate()
+    updater.quitAndInstall()
+    await vi.advanceTimersByTimeAsync(25 * 60 * 60 * 1000)
+
+    expect(autoUpdaterMock.setFeedURL).not.toHaveBeenCalled()
+    expect(autoUpdaterMock.checkForUpdates).not.toHaveBeenCalled()
+    expect(autoUpdaterMock.downloadUpdate).not.toHaveBeenCalled()
+    expect(autoUpdaterMock.quitAndInstall).not.toHaveBeenCalled()
+    expect(appMock.quit).not.toHaveBeenCalled()
+    expect(powerMonitorOnMock).not.toHaveBeenCalled()
+    expect(fetchNudgeMock).not.toHaveBeenCalled()
+    expect(updater.getRemoteServerUpdateSupport().automatic).toBe(false)
+    expect(() => updater.checkForRemoteServerUpdate('selfbuilt')).toThrow(
+      'remote_update_manual_required'
+    )
+    expect(send).toHaveBeenCalledWith(
+      'updater:status',
+      expect.objectContaining({
+        state: 'error',
+        message: 'Updates are managed by the Orca self-built updater.'
+      })
+    )
+  })
+
+  it('honors the packaged self-build marker when launched without wrapper environment', async () => {
+    const resources = mkdtempSync(join(tmpdir(), 'orca-selfbuilt-updater-'))
+    const original = Object.getOwnPropertyDescriptor(process, 'resourcesPath')
+    writeFileSync(join(resources, 'selfbuilt-managed.json'), '{}')
+    Object.defineProperty(process, 'resourcesPath', { value: resources, configurable: true })
+    try {
+      const updater = await loadUpdaterModule()
+      updater.setupAutoUpdater({ webContents: { send: vi.fn() } } as never)
+      updater.checkForUpdatesFromMenu()
+      updater.quitAndInstall()
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(autoUpdaterMock.setFeedURL).not.toHaveBeenCalled()
+      expect(autoUpdaterMock.checkForUpdates).not.toHaveBeenCalled()
+      expect(autoUpdaterMock.quitAndInstall).not.toHaveBeenCalled()
+    } finally {
+      if (original) {
+        Object.defineProperty(process, 'resourcesPath', original)
+      } else {
+        Reflect.deleteProperty(process, 'resourcesPath')
+      }
+      rmSync(resources, { recursive: true, force: true })
+    }
   })
 
   it('runs a startup check immediately when the last background check is stale', async () => {
