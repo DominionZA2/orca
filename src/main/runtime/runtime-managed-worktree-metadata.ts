@@ -1,4 +1,3 @@
-import type { FolderWorkspace } from '../../shared/folder-workspace-types'
 import type { GitPushTarget, Worktree } from '../../shared/worktree/types'
 import type { WorktreeMeta } from '../../shared/worktree/meta-types'
 import { worktreeWorkspaceKey } from '../../shared/workspace-scope'
@@ -79,7 +78,6 @@ export async function updateRuntimeManagedWorktreeMetadata(args: {
           },
           parent.folderWorkspace.id
         ),
-        parent.folderWorkspace,
         worktree
       )
       if (hostConflict) {
@@ -156,24 +154,10 @@ export async function updateRuntimeManagedWorktreeMetadata(args: {
   return args.ports.showWorktree(`id:${worktree.id}`)
 }
 
-/**
- * The reason a worktree may not hang off this folder workspace, or `null` when it may.
- *
- * Why resolve rather than compare projected host ids: a FolderWorkspace persists only its
- * `connectionId` on this side — `executionHostId` is a renderer-owned stamp — so a projected
- * comparison rejects every worktree on a `runtime:` host. Both sides are therefore reduced to the
- * level `resolveFolderWorkspaceHost` answers at, where `local` and `runtime:` are the same answer
- * because a runtime environment's own server is local to the work it runs.
- *
- * A folder that does carry the stamp is what that reduction loses: it flattens every
- * `runtime:<environment>` to `local`, so two different environments compared equal and a
- * cross-runtime attach was persisted. Only `executionHostId` can name an environment — a
- * `connectionId` beside it is an SSH target nested inside that environment, not a host this client
- * addresses — so the stamp is read off the record itself, and a folder carrying none stays local.
- */
+// Folder lookup is scoped to this runtime's store, which persists connectionId, not renderer
+// runtime stamps. Compare local/SSH ownership here; this runtime's local/runtime aliases agree.
 function describeFolderParentHostConflict(
   folderHost: FolderWorkspaceHost,
-  folderWorkspace: FolderWorkspace,
   worktree: ResolvedWorktree
 ): string | null {
   if (folderHost.kind === 'missing') {
@@ -185,12 +169,6 @@ function describeFolderParentHostConflict(
   const worktreeHost = parseExecutionHostId(
     worktree.identity?.executionHostId ?? worktree.hostId ?? LOCAL_EXECUTION_HOST_ID
   )
-  const stampedFolderHost = parseExecutionHostId(folderWorkspace.executionHostId)
-  if (worktreeHost?.kind === 'runtime' && stampedFolderHost?.kind === 'runtime') {
-    return worktreeHost.environmentId === stampedFolderHost.environmentId
-      ? null
-      : 'Parent folder workspace must belong to the same runtime environment.'
-  }
   const worktreeTargetId = worktreeHost?.kind === 'ssh' ? worktreeHost.targetId : null
   const folderTargetId = folderHost.kind === 'ssh' ? folderHost.targetId : null
   return worktreeTargetId === folderTargetId

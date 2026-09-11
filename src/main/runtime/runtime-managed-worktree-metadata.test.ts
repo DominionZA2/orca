@@ -130,22 +130,6 @@ describe('updateRuntimeManagedWorktreeMetadata', () => {
     )
   })
 
-  it('attaches a runtime-hosted worktree to a folder workspace in the same runtime environment', async () => {
-    const worktree = makeWorktree({ hostId: 'runtime:env-a' })
-    const store = makeStore()
-
-    await updateRuntimeManagedWorktreeMetadata({
-      selector: `id:${worktree.id}`,
-      updates: { lineage: { parentWorktree: 'folder:fw-1' } },
-      store,
-      ports: makePorts(worktree, makeFolderParent({ executionHostId: 'runtime:env-a' }))
-    })
-
-    expect(store.setWorkspaceLineage).toHaveBeenCalledWith(
-      expect.objectContaining({ parentWorkspaceKey: 'folder:fw-1' })
-    )
-  })
-
   it('attaches an ssh worktree to a folder workspace on the same ssh target', async () => {
     const worktree = makeWorktree({ hostId: 'ssh:build-box' })
     const store = makeStore()
@@ -189,22 +173,6 @@ describe('updateRuntimeManagedWorktreeMetadata', () => {
         updates: { lineage: { parentWorktree: 'folder:fw-1' } },
         store,
         ports: makePorts(worktree, makeFolderParent({ connectionId: 'other-box' }))
-      })
-    ).rejects.toMatchObject({ code: 'LINEAGE_PARENT_CONTEXT_CONFLICT' })
-
-    expect(store.setWorkspaceLineage).not.toHaveBeenCalled()
-  })
-
-  it('rejects a folder workspace parent in a different runtime environment', async () => {
-    const worktree = makeWorktree({ hostId: 'runtime:env-a' })
-    const store = makeStore()
-
-    await expect(
-      updateRuntimeManagedWorktreeMetadata({
-        selector: `id:${worktree.id}`,
-        updates: { lineage: { parentWorktree: 'folder:fw-1' } },
-        store,
-        ports: makePorts(worktree, makeFolderParent({ executionHostId: 'runtime:env-b' }))
       })
     ).rejects.toMatchObject({ code: 'LINEAGE_PARENT_CONTEXT_CONFLICT' })
 
