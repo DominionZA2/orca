@@ -1,3 +1,7 @@
+import { registerPosixRecoveryShellFixture } from '../orchestration-recovery-shell-fixture'
+
+registerPosixRecoveryShellFixture()
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const callMock = vi.fn()

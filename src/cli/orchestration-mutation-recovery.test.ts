@@ -1,3 +1,7 @@
+import { registerPosixRecoveryShellFixture } from './orchestration-recovery-shell-fixture'
+
+registerPosixRecoveryShellFixture()
+
 import { describe, expect, it } from 'vitest'
 import { runProcess } from '../shared/child-process/run-process'
 import {

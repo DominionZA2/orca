@@ -74,11 +74,8 @@ export function formatGroupHelp(specs: CommandSpec[], group: string): string {
 
 function formatCommandFlagHelp(flag: string, commandPath: string[]): string {
   const command = commandPath.join(' ')
-  const skillsHelp = formatSkillsCommandFlagHelp(command, flag)
-  if (skillsHelp) {
-    return skillsHelp
-  }
-  const scopedHelp = formatWorktreeSelectorFlagHelp(command, flag)
+  const scopedHelp =
+    formatSkillsCommandFlagHelp(command, flag) ?? formatWorktreeSelectorFlagHelp(command, flag)
   if (scopedHelp) {
     return scopedHelp
   }
