@@ -23,14 +23,14 @@ function squash(text) {
   return text.replace(/\s+/gu, ' ').trim()
 }
 
-// Routing lives in the frontmatter description alone; the body must not satisfy these.
-function readDescription() {
-  return squash(frontmatter(readKernel()))
+// Detailed routing remains in the full guide; discovery uses its concise description.
+function readRouting() {
+  return squash(readKernel())
 }
 
 describe('orchestration skill routing', () => {
-  it('keeps the verbatim routing triggers a model matches the skill on', () => {
-    const description = readDescription()
+  it('preserves detailed routing when the full guide is loaded', () => {
+    const description = readRouting()
 
     for (const trigger of [
       'threaded messages',
@@ -52,7 +52,7 @@ describe('orchestration skill routing', () => {
   })
 
   it('keeps external browser routing at the OS/page boundary', () => {
-    const description = readDescription()
+    const description = readRouting()
 
     expect(description).toContain(
       "Use Computer Use for external browser windows, webviews, Orca app UI, or desktop UI outside Orca's embedded browser only when the task requires OS/window-level control such as focus, menus, dialogs, coordinates, or screenshots."

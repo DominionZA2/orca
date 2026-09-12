@@ -12,9 +12,8 @@ const stubPath = join(projectDir, 'skills', 'computer-use', 'SKILL.md')
 const bundledGuide = BUNDLED_SKILL_GUIDES.find((guide) => guide.name === 'computer-use')?.markdown
 
 describe('computer-use skill guidance', () => {
-  it('keeps discovery scoped to desktop control and out of the embedded browser', () => {
-    const frontmatter = /^---\n([\s\S]*?)\n---\n/u.exec(readFileSync(guidePath, 'utf8'))?.[1] ?? ''
-    const description = frontmatter.replace(/\s+/gu, ' ')
+  it('preserves desktop and page routing boundaries in the full guide', () => {
+    const description = readFileSync(guidePath, 'utf8').replace(/\s+/gu, ' ')
 
     expect(description).toContain('OS/window-level inspection and input')
     expect(description).toContain('external browser window')

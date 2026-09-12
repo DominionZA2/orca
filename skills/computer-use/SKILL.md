@@ -1,9 +1,6 @@
 ---
 name: computer-use
-description: >-
-  OS/window-level inspection and input in visible local app windows through `orca computer`:
-  native apps, external browser windows (Chrome, Edge, Safari), and app webviews. Not for
-  Orca's embedded browser (use `orca-cli`) or page-only automation (use Playwright or CDP).
+description: Control native apps and external browser windows at OS level. Use orca-cli for embedded pages; Playwright/CDP for page-only automation.
 ---
 
 # Computer Use
