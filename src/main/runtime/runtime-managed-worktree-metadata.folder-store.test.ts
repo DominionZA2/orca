@@ -1,10 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ExecutionHostId } from '../../shared/execution-host'
 import type { Store } from '../persistence'
-import { createStore, makeRepo, makeWorktreeLineage, testState } from '../persistence-test-harness'
+import {
+  createStore,
+  makeRepo,
+  makeWorktreeLineage,
+  readPersistedStateJson,
+  testState,
+  writePersistedStateJson
+} from '../persistence-test-harness'
 import { folderWorkspaceKey, worktreeWorkspaceKey } from '../../shared/workspace-scope'
 import { updateRuntimeManagedWorktreeMetadata } from './runtime-managed-worktree-metadata'
 import { RuntimeWorktreeLineageController } from './runtime-worktree-lineage-controller'
@@ -138,10 +145,11 @@ describe('folder attachment through the runtime store', () => {
     const worktree = child(store, 'runtime:env-a')
     store.flush()
     store.freezeWrites()
+    // Why: the store persists to the profile-state database next to orca-data.json; edit the saved state there.
     const file = join(root, 'owner', 'orca-data.json')
-    const saved = JSON.parse(readFileSync(file, 'utf8'))
+    const saved = JSON.parse(readPersistedStateJson(file))
     saved.folderWorkspaces[0].executionHostId = 'runtime:env-b'
-    writeFileSync(file, JSON.stringify(saved))
+    writePersistedStateJson(file, JSON.stringify(saved))
 
     const restored = openStore('owner')
     expect(restored.getFolderWorkspaces()[0]).not.toHaveProperty('executionHostId')
@@ -177,10 +185,9 @@ describe('folder attachment through the runtime store', () => {
     const folder = createFolder(owner, 'Owner folder')
     const worktree = child(owner, 'runtime:env-a')
     owner.flush()
-    mkdirSync(join(root, 'other'), { recursive: true })
-    writeFileSync(
+    writePersistedStateJson(
       join(root, 'other', 'orca-data.json'),
-      readFileSync(join(root, 'owner', 'orca-data.json'))
+      readPersistedStateJson(join(root, 'owner', 'orca-data.json'))
     )
     const other = openStore('other')
     other.updateFolderWorkspace(folder.id, { name: 'Other folder' })
