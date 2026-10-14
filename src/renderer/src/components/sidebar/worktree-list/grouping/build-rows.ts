@@ -107,15 +107,11 @@ export function buildRows(
     pinnedDisplayPolicy === 'duplicate-in-groups'
       ? worktrees
       : worktrees.filter((worktree) => !pinnedSectionIds.has(getWorktreeHostIdentity(worktree)))
-  // Why: a worktree attached to a rendered folder workspace lives inside that
-  // card, whatever lane its own status would pick, so it must not also be a row
-  // of its own. Pinned attached worktrees keep their pinned placement, matching
-  // worktree lineage. A folder that is not rendered (host filter) keeps its
-  // children visible as ordinary rows rather than hiding them.
+  // Only rendered folders claim children; pinned children retain their pinned placement.
   const renderableFolderIds = new Set(
     renderableFolderWorkspaces.map((pair) => pair.folderWorkspace.id)
   )
-  const attachedByFolderId = new Map(
+  const allAttachedByFolderId = new Map(
     [
       ...getAttachedWorktreesByFolderWorkspaceId(
         worktreesOutsidePinnedSection,
@@ -124,7 +120,13 @@ export function buildRows(
     ].filter(([folderId]) => renderableFolderIds.has(folderId))
   )
   const attachedIdentities = new Set(
-    [...attachedByFolderId.values()].flat().map(getWorktreeHostIdentity)
+    [...allAttachedByFolderId.values()].flat().map(getWorktreeHostIdentity)
+  )
+  const attachedByFolderId = new Map(
+    [...allAttachedByFolderId].map(([folderId, children]) => [
+      folderId,
+      children.filter((child) => !pinnedSectionIds.has(getWorktreeHostIdentity(child)))
+    ])
   )
   const naturalWorktrees = worktreesOutsidePinnedSection.filter(
     (worktree) => !attachedIdentities.has(getWorktreeHostIdentity(worktree))

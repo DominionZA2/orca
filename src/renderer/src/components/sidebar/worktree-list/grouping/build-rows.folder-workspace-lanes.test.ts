@@ -7,7 +7,7 @@ import {
   getPRLaneKey,
   PINNED_GROUP_KEY
 } from './group-keys'
-import type { Row, WorktreeGroupBy } from './row-types'
+import type { PinnedWorktreeDisplayPolicy, Row, WorktreeGroupBy } from './row-types'
 import { repo, worktree } from '../../worktree-list-groups-test-fixtures'
 import type { FolderWorkspace } from '../../../../../../shared/folder-workspace-types'
 import type { ProjectGroup } from '../../../../../../shared/project-group-types'
@@ -57,6 +57,7 @@ function buildSidebarRows(options: {
   projectGroups?: readonly ProjectGroup[]
   worktrees?: (typeof worktree)[]
   collapsedGroups?: Set<string>
+  pinnedDisplayPolicy?: PinnedWorktreeDisplayPolicy
   workspaceLineageByChildKey?: Record<string, WorkspaceLineage>
 }): Row[] {
   const worktrees = options.worktrees ?? [worktree]
@@ -82,7 +83,7 @@ function buildSidebarRows(options: {
     options.folderWorkspaces ?? [makeFolderWorkspace()],
     undefined,
     undefined,
-    undefined,
+    options.pinnedDisplayPolicy,
     options.workspaceLineageByChildKey ?? {}
   )
 }
@@ -169,16 +170,22 @@ describe('worktrees attached to a folder workspace', () => {
     expect(folderRows(rows)[0]).toMatchObject({ attachedChildCount: 1, attachedCollapsed: true })
   })
 
-  it('keeps a pinned child in the pinned section, matching worktree lineage', () => {
-    const rows = buildSidebarRows({
-      groupBy: 'workspace-status',
-      worktrees: [{ ...attachedChild, isPinned: true }],
-      workspaceLineageByChildKey: lineage
-    })
+  for (const groupBy of ALL_GROUP_BY) {
+    it.each<PinnedWorktreeDisplayPolicy>(['single-location', 'duplicate-in-groups'])(
+      `keeps a pinned attached child exclusively pinned under ${groupBy} with %s`,
+      (pinnedDisplayPolicy) => {
+        const rows = buildSidebarRows({
+          groupBy,
+          pinnedDisplayPolicy,
+          worktrees: [{ ...attachedChild, isPinned: true }],
+          workspaceLineageByChildKey: lineage
+        })
 
-    expect(itemRows(rows).map((row) => row.sectionKey)).toEqual([PINNED_GROUP_KEY])
-    expect(folderRows(rows)[0]).toMatchObject({ attachedChildCount: 0 })
-  })
+        expect(itemRows(rows).map((row) => row.sectionKey)).toEqual([PINNED_GROUP_KEY])
+        expect(folderRows(rows)[0]).toMatchObject({ attachedChildCount: 0 })
+      }
+    )
+  }
 
   it('leaves the child in its own lane when the folder workspace is not rendered', () => {
     // Why: a host filter that hides the folder must not also hide its children.
